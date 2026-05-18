@@ -19,31 +19,37 @@
             font-family: 'Malgun Gothic', dotum, sans-serif;
         }
 
-        /* 메인 컨테이너: 왼쪽 리스트와 오른쪽 지도를 2분할 */
+        /* 메인 컨테이너 */
         .container {
             display: flex;
             width: 100%;
             height: 100vh;
         }
 
-        /* 왼쪽 사이드바 (하늘색 계열 테마) */
+        /* 왼쪽 사이드바 (하늘색 테마) */
         #menu_wrap {
             width: 380px;
             height: 100%;
             padding: 20px;
-            background-color: #f0f8ff; /* 부드러운 앨리스 블루 */
+            background-color: #f0f8ff;
             border-right: 2px solid #a1c4fd;
             overflow-y: auto;
             z-index: 10;
             box-shadow: 2px 0 10px rgba(0,0,0,0.1);
         }
 
-        /* 서비스 제목 */
         h2 {
             color: #2b6cb0;
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 5px;
             font-size: 24px;
+        }
+
+        .subtitle {
+            text-align: center;
+            font-size: 12px;
+            color: #4a5568;
+            margin-bottom: 20px;
         }
 
         .search_box {
@@ -59,10 +65,6 @@
             font-size: 14px;
         }
 
-        .search_box input:focus {
-            border-color: #3182ce;
-        }
-
         .search_box button {
             margin-top: 10px;
             width: 100%;
@@ -73,14 +75,13 @@
             border-radius: 8px;
             font-weight: bold;
             cursor: pointer;
-            transition: background 0.2s;
         }
 
         .search_box button:hover {
             background-color: #2b6cb0;
         }
 
-        /* 카테고리 선택 버튼 영역 */
+        /* 카테고리 선택 버튼 */
         .category_box {
             display: flex;
             gap: 5px;
@@ -95,7 +96,6 @@
             border-radius: 6px;
             font-size: 13px;
             cursor: pointer;
-            transition: all 0.2s;
         }
 
         .category_box button.active {
@@ -104,7 +104,7 @@
             border-color: #3182ce;
         }
 
-        /* 오른쪽 지도 영역 */
+        /* 오른쪽 지도 */
         #map {
             flex: 1;
             height: 100%;
@@ -114,20 +114,13 @@
             list-style: none;
         }
 
-        /* 검색 리스트 아이템 스타일 */
+        /* 검색 리스트 아이템 */
         .item {
             padding: 15px;
             background-color: white;
             border-radius: 8px;
             margin-bottom: 10px;
             border: 1px solid #e2e8f0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-            transition: transform 0.2s;
-        }
-
-        .item:hover {
-            transform: translateY(-2px);
-            border-color: #bee3f8;
         }
 
         .item strong {
@@ -153,14 +146,13 @@
             color: #dd6b20;
         }
 
-        /* 커스텀 오버레이/인포윈도우 스타일 */
+        /* 팝업 스타일 */
         .custom_overlay {
             background: white;
             padding: 10px;
             border-radius: 8px;
             border: 2px solid #4299e1;
             font-size: 12px;
-            box-shadow: 0px 2px 6px rgba(0,0,0,0.2);
             text-align: center;
         }
     </style>
@@ -170,10 +162,12 @@
 <div class="container">
     <div id="menu_wrap">
         <h2>배고픔 지도 🗺️</h2>
+        <div class="subtitle">출발지(내 위치) ➔ 목적지 사이의 맛집 탐색</div>
+        
         <div class="search_box">
-            <form onsubmit="handleSearch(); return false;">
-                <input type="text" id="keyword" placeholder="장소, 주소, 또는 맛집 입력">
-                <button type="submit">검색하기</button>
+            <form onsubmit="handleRouteSearch(); return false;">
+                <input type="text" id="destination" placeholder="도착 장소 또는 주소 입력 (예: 중학교)">
+                <button type="submit">중간 지점 장소 찾기</button>
             </form>
         </div>
 
@@ -197,17 +191,22 @@
     let ps;             // 장소 검색 객체
     let geocoder;       // 주소 검색 객체
     let infowindow;     // 정보창 객체
-    let currentMarker;  // 현재 위치 마커
-    let markers = [];   // 검색 결과 마커들을 담을 배열
-    let currentCategory = '통합'; // 현재 선택된 카테고리 기본값
-    let lastSearchCenter = null;  // 마지막으로 검색 성공한 중심 좌표 기록
+    
+    let startCoords = null;      // 출발지 (현재 위치 🐧) 좌표
+    let destCoords = null;       // 목적지 좌표
+    let midpointCoords = null;   // 두 지점의 중간 좌표
+    
+    let currentMarker = null;    // 현재 위치 마커 오버레이
+    let destMarker = null;       // 목적지 마커 오버레이
+    let markers = [];            // 중간 검색 결과 마커들을 담을 배열
+    let currentCategory = '통합';  // 현재 선택된 카테고리
 
-    // 지도가 완전히 로드된 후에 실행
+    // 지도 로드 후 실행
     kakao.maps.load(function() {
         const mapContainer = document.getElementById('map');
         const mapOption = {
-            center: new kakao.maps.LatLng(37.566826, 126.9786567), // 기본 좌표 (서울시청)
-            level: 4
+            center: new kakao.maps.LatLng(37.566826, 126.9786567), // 기본 서울시청
+            level: 5
         };
 
         map = new kakao.maps.Map(mapContainer, mapOption);
@@ -215,79 +214,105 @@
         geocoder = new kakao.maps.services.Geocoder();
         infowindow = new kakao.maps.InfoWindow({ zIndex: 1 });
 
-        // 앱 실행 시 사용자 위치 가져오기
+        // 사용자의 현재 위치(출발지) 가져오기
         getCurrentLocation();
     });
 
-    // 사용자의 현재 위치를 받아오는 함수
+    // 1. 현재 위치 가져오기 (출발지 설정)
     function getCurrentLocation() {
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(function(position) {
                 const lat = position.coords.latitude;
                 const lon = position.coords.longitude;
-                const locPosition = new kakao.maps.LatLng(lat, lon);
+                startCoords = new kakao.maps.LatLng(lat, lon);
                 
-                lastSearchCenter = locPosition; // 초기 기준점을 현재 위치로 설정
-                map.setCenter(locPosition);
-                displayCurrentMarker(locPosition);
+                map.setCenter(startCoords);
+                displayStartMarker(startCoords);
             }, function(error) {
-                console.error("위치 권한 거부됨 혹은 오류 발생:", error);
-                // 위치 권한 거부 시 기본 서울시청 기준으로 세팅
-                lastSearchCenter = map.getCenter();
+                console.error("위치 획득 실패, 기본값 대체:", error);
+                // 권한 거부 시 기본값 지정
+                startCoords = new kakao.maps.LatLng(37.566826, 126.9786567);
+                displayStartMarker(startCoords);
             });
-        } else {
-            lastSearchCenter = map.getCenter();
         }
     }
 
-    // 펭귄(🐧) 모양의 현재 위치 마커 표시 함수
-    function displayCurrentMarker(locPosition) {
-        if (currentMarker) currentMarker.setMap(null); // 기존 현재위치 마커 제거
-
-        // 이모지를 지도 위에 올리기 위해 CustomOverlay 사용
+    // 출발지 마커 (🐧) 표시
+    function displayStartMarker(position) {
+        if (currentMarker) currentMarker.setMap(null);
         currentMarker = new kakao.maps.CustomOverlay({
-            position: locPosition,
-            content: '<div style="font-size: 30px; cursor: default;">🐧</div>',
+            position: position,
+            content: '<div style="font-size: 32px; cursor: default;" title="출발지 (내 위치)">🐧</div>',
             xAnchor: 0.5,
             yAnchor: 0.5
         });
         currentMarker.setMap(map);
     }
 
-    // 통합 검색 제어기 (주소 판별 로직 포함)
-    function handleSearch() {
-        const keyword = document.getElementById('keyword').value;
+    // 2. 검색 버튼 클릭 시 작동하는 함수
+    function handleRouteSearch() {
+        const destinationKeyword = document.getElementById('destination').value;
 
-        if (!keyword.replace(/^\s+|\s+$/g, '')) {
-            alert('키워드를 입력해주세요!');
+        if (!destinationKeyword.replace(/^\s+|\s+$/g, '')) {
+            alert('도착 장소나 주소를 입력해주세요!');
             return false;
         }
 
-        // 기존 마커 및 리스트 클리어
-        clearMap();
+        // 새 검색을 위해 기존 데이터 클리어 (출발지 🐧 제외하고 전부 삭제)
+        clearSearchResults();
 
-        // 1단계: 주소인지 먼저 검색 시도 (도로명/지번 주소 입력 대응)
-        geocoder.addressSearch(keyword, function(result, status) {
+        // [A 단계] 입력값이 도로명/지번 주소인지 먼저 검사
+        geocoder.addressSearch(destinationKeyword, function(result, status) {
             if (status === kakao.maps.services.Status.OK) {
-                // 주소 검색 성공 시 해당 좌표로 이동 후 주변 탐색 기준점 변경
+                // 주소인 경우 바로 좌표 처리
                 const coords = new kakao.maps.LatLng(result[0].y, result[0].x);
-                map.setCenter(coords);
-                lastSearchCenter = coords; // 기준점 업데이트
-                
-                // 주소지 주변으로 현재 선택된 카테고리 자동 재검색
-                searchPlacesByTarget(keyword);
+                processDestination(coords, result[0].address_name);
             } else {
-                // 주소가 아닐 경우 일반 키워드로 검색 진행
-                searchPlacesByTarget(keyword);
+                // [B 단계] 주소가 아니라면 장소(키워드) 검색 수행 (예: "OO중학교")
+                ps.keywordSearch(destinationKeyword, function(data, status) {
+                    if (status === kakao.maps.services.Status.OK) {
+                        // 가장 검색 정확도가 높은 첫 번째 결과 장소를 목적지로 설정
+                        const coords = new kakao.maps.LatLng(data[0].y, data[0].x);
+                        processDestination(coords, data[0].place_name);
+                    } else {
+                        alert('도착 장소를 찾을 수 없습니다. 정확한 명칭이나 주소를 입력해주세요.');
+                    }
+                });
             }
         });
     }
 
-    // 카테고리 버튼 선택 변경 함수
+    // 3. 목적지가 확정되었을 때 중간 지점을 계산하고 주변을 검색하는 함수
+    function processDestination(coords, placeName) {
+        destCoords = coords;
+
+        // 목적지 마커 표시 (🏁 이모지로 목적지 표현)
+        if (destMarker) destMarker.setMap(null);
+        destMarker = new kakao.maps.CustomOverlay({
+            position: destCoords,
+            content: `<div style="font-size: 30px; cursor: default;" title="목적지: ${placeName}">🏁</div>`,
+            xAnchor: 0.5,
+            yAnchor: 0.5
+        });
+        destMarker.setMap(map);
+
+        // [중요 수학 공식] 현재 위치와 목적지의 위도/경도 중간값(Midpoint) 계산
+        if (!startCoords) {
+            alert("현재 위치를 로드 중입니다. 잠시 후 다시 시도해주세요.");
+            return;
+        }
+        const midLat = (startCoords.getLat() + destCoords.getLat()) / 2;
+        const midLng = (startCoords.getLng() + destCoords.getLng()) / 2;
+        midpointCoords = new kakao.maps.LatLng(midLat, midLng);
+
+        // 중간 지점 근처의 상점들 검색 시작
+        searchMiddlePlaces();
+    }
+
+    // 4. 카테고리 변경 버튼 제어
     function changeCategory(category) {
         currentCategory = category;
         
-        // 버튼 활성화 UI 스타일 토글
         const buttons = document.querySelectorAll('.category_box button');
         buttons.forEach(btn => btn.classList.remove('active'));
         
@@ -296,53 +321,55 @@
         if(category === '음식점') document.getElementById('cat_restaurant').classList.add('active');
         if(category === '카페') document.getElementById('cat_cafe').classList.add('active');
 
-        // 카테고리 바꿀 때도 기존 결과 클리어 후 재검색
-        const keyword = document.getElementById('keyword').value;
-        if (keyword.trim() !== '') {
-            clearMap();
-            searchPlacesByTarget(keyword);
+        // 목적지가 이미 검색된 상태라면 카테고리 변경 시 즉시 재검색
+        if (destCoords) {
+            // 기존 마커/리스트만 지우고 재검색
+            for (let i = 0; i < markers.length; i++) markers[i].setMap(null);
+            markers = [];
+            document.getElementById('placesList').innerHTML = '';
+            infowindow.close();
+            
+            searchMiddlePlaces();
         }
     }
 
-    // 조건에 맞춰서 카카오 API를 호출하는 함수
-    function searchPlacesByTarget(keyword) {
-        let finalKeyword = keyword;
+    // 5. 중간 좌표 기준 장소 검색
+    function searchMiddlePlaces() {
+        let searchKeyword = "";
         
-        // 카테고리가 지정되어 있다면 검색어 뒤에 조합 (예: 강남역 + 카페)
-        if (currentCategory !== '통합') {
-            finalKeyword = keyword + " " + currentCategory;
+        if (currentCategory === '통합') {
+            searchKeyword = "맛집"; // 통합일 때는 포괄적인 맛집/편의시설 검색 유도
+        } else {
+            searchKeyword = currentCategory;
         }
 
-        // 특정 기준점(최근 주소이동지 또는 현재위치)이 있다면 반경 2km 이내 우선 검색하도록 설정
-        if (lastSearchCenter) {
-            ps.keywordSearch(finalKeyword, placesSearchCB, {
-                location: lastSearchCenter,
-                radius: 2000,
-                sort: kakao.maps.services.SortBy.DISTANCE // 거리순 정렬 조건 추가
-            });
-        } else {
-            ps.keywordSearch(finalKeyword, placesSearchCB);
-        }
+        // 중간 지점(midpointCoords) 기준 반경 1.5km(1500m) 내의 장소들을 거리순으로 검색
+        ps.keywordSearch(searchKeyword, placesSearchCB, {
+            location: midpointCoords,
+            radius: 1500,
+            sort: kakao.maps.services.SortBy.DISTANCE
+        });
     }
 
-    // 검색 완료 콜백 함수
-    function placesSearchCB(data, status, pagination) {
+    // 장소 결과 수신 콜백
+    function placesSearchCB(data, status) {
         if (status === kakao.maps.services.Status.OK) {
             displayPlaces(data);
         } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
-            alert('검색 결과가 존재하지 않습니다.');
-        } else if (status === kakao.maps.services.Status.ERROR) {
-            alert('검색 중 오류가 발생했습니다.');
+            alert('중간 경로에 해당하는 상점 결과가 없습니다.');
         }
     }
 
-    // 결과 출력 및 이모지 마커 매핑 함수
+    // 6. 지도에 마커 찍고 리스트 생성
     function displayPlaces(places) {
         const listEl = document.getElementById('placesList');
         const bounds = new kakao.maps.LatLngBounds();
 
-        // 카테고리에 맞는 이모지 마커 선정
-        let markerEmoji = '⭐'; // 기본 통합 마커
+        // 출발지와 목적지를 지도 화면 범위(Bounds)에 무조건 포함시킴
+        bounds.extend(startCoords);
+        bounds.extend(destCoords);
+
+        let markerEmoji = '⭐';
         if (currentCategory === '편의점') markerEmoji = '🏪';
         if (currentCategory === '카페') markerEmoji = '☕';
         if (currentCategory === '음식점') markerEmoji = '😋';
@@ -350,104 +377,92 @@
         for (let i = 0; i < places.length; i++) {
             const placePosition = new kakao.maps.LatLng(places[i].y, places[i].x);
             
-            // 1. 이모지 마커 커스텀 오버레이로 생성
+            // 이모지 커스텀 마커 생성
             const markerOverlay = new kakao.maps.CustomOverlay({
                 position: placePosition,
-                content: `<div style="font-size: 26px; cursor: pointer;" title="${places[i].place_name}">${markerEmoji}</div>`,
+                content: `<div class="emoji_marker" style="font-size: 26px; cursor: pointer;">${markerEmoji}</div>`,
                 xAnchor: 0.5,
                 yAnchor: 0.5
             });
 
-            // 마커를 지도에 표시하고 배열에 저장
             markerOverlay.setMap(map);
             markers.push(markerOverlay);
 
-            // 2. 추천도 계산 (거리 가상 점수 기반 🍖 1~5개 부여)
-            // 카카오에서 준 distance(미터단위) 활용, 가까울수록 고기 개수가 많아짐
-            let distanceValue = parseInt(places[i].distance) || 500; 
+            // 거리 점수 기반 추천도(🍖) 계산 (중간 지점 기준의 거리 체킹)
+            let distanceValue = parseInt(places[i].distance) || 500;
             let meatCount = 1;
             if (distanceValue < 200) meatCount = 5;
-            else if (distanceValue < 500) meatCount = 4;
-            else if (distanceValue < 1000) meatCount = 3;
-            else if (distanceValue < 1500) meatCount = 2;
+            else if (distanceValue < 400) meatCount = 4;
+            else if (distanceValue < 700) meatCount = 3;
+            else if (distanceValue < 1100) meatCount = 2;
             const meatRating = '🍖'.repeat(meatCount);
 
-            // 영업시간 데이터 임의 목업 (카카오 기본 API는 실시간 영업시간 미제공이므로 안내문구 대체)
-            const businessHours = "09:00 ~ 22:00 (방문 전 확인 필요)";
+            const businessHours = "09:00 ~ 21:00 (방문 전 확인)";
 
-            // 3. 왼쪽 리스트 엘리먼트 생성
+            // 리스트 생성
             const itemEl = document.createElement('li');
             itemEl.className = 'item';
+            itemEl.style.cursor = 'pointer';
             itemEl.innerHTML = `
                 <strong>${places[i].place_name}</strong>
                 <div class="address">📍 ${places[i].road_address_name ? places[i].road_address_name : places[i].address_name}</div>
                 <div class="info">🕒 영업시간: ${businessHours}</div>
-                <div class="recommend">추천도: ${meatRating} (${distanceValue}m)</div>
+                <div class="recommend">추천도: ${meatRating} (중간점에서 ${distanceValue}m)</div>
             `;
             
-            // 4. 마커를 클릭했을 때 팝업창(인포윈도우) 띄우기 이벤트 바인딩
-            // 오버레이 엘리먼트에 직접 이벤트 심기 위해 가상 DOM 객체 핸들링 수행
+            // 마커 클릭 시 정보창(상표명, 전화번호, 상세 링크) 띄우기
             setTimeout(() => {
-                const overlayElement = markerOverlay.a; // 생성된 커스텀오버레이 내부 DOM 접근 구문
-                if(overlayElement) {
-                    overlayElement.addEventListener('click', function() {
-                        const tel = places[i].phone ? places[i].phone : '정보 없음';
-                        const url = places[i].place_url;
-                        const popupContent = `
-                            <div class="custom_overlay">
-                                <strong>${places[i].place_name}</strong><br>
-                                📞 번호: ${tel}<br>
-                                🔗 <a href="${url}" target="_blank" style="color:#3182ce; font-weight:bold;">상세정보 보기</a>
-                            </div>
-                        `;
-                        infowindow.setContent(popupContent);
-                        // 인포윈도우가 마커 이모지랑 겹치지 않게 가상 마커 포지션 객체 활용하여 오픈
-                        const tempMarker = new kakao.maps.Marker({ position: placePosition });
-                        infowindow.open(map, tempMarker);
+                const element = markerOverlay.a; // 커스텀 오버레이 DOM 참조
+                if (element) {
+                    element.addEventListener('click', function() {
+                        openInfoWindow(places[i], placePosition);
                     });
                 }
             }, 50);
 
-            // 리스트 아이템 클릭 시 지도 중심 이동 및 인포윈도우 오픈 트리거 연동
+            // 리스트 아이템 클릭 시 이벤트
             itemEl.onclick = function() {
                 map.setCenter(placePosition);
-                const tel = places[i].phone ? places[i].phone : '정보 없음';
-                const popupContent = `
-                    <div class="custom_overlay">
-                        <strong>${places[i].place_name}</strong><br>
-                        📞 번호: ${tel}<br>
-                        🔗 <a href="${places[i].place_url}" target="_blank" style="color:#3182ce;">상세정보 보기</a>
-                    </div>
-                `;
-                infowindow.setContent(popupContent);
-                const tempMarker = new kakao.maps.Marker({ position: placePosition });
-                infowindow.open(map, tempMarker);
+                openInfoWindow(places[i], placePosition);
             };
 
             listEl.appendChild(itemEl);
-
-            // 검색된 장소 위치를 기준으로 지도 범위 누적 확장
             bounds.extend(placePosition);
         }
 
-        // 검색된 장소들이 한눈에 보이게 지도 중심/레벨 조정
+        // 모든 마커가 잘 보이도록 지도 시점 자동 조정
         map.setBounds(bounds);
     }
 
-    // 기존 결과 데이터 완전히 리셋하는 함수
-    function clearMap() {
-        // 기존 마커 배열 지우기
+    // 인포윈도우 오픈 공통 함수
+    function openInfoWindow(place, position) {
+        const tel = place.phone ? place.phone : '정보 없음';
+        const popupContent = `
+            <div class="custom_overlay">
+                <strong>${place.place_name}</strong><br>
+                📞 번호: ${tel}<br>
+                🔗 <a href="${place.place_url}" target="_blank" style="color:#3182ce; font-weight:bold;">상세정보</a>
+            </div>
+        `;
+        infowindow.setContent(popupContent);
+        const tempMarker = new kakao.maps.Marker({ position: position });
+        infowindow.open(map, tempMarker);
+    }
+
+    // 7. 검색 결과 초기화 함수 (출발지 마커는 보존)
+    function clearSearchResults() {
         for (let i = 0; i < markers.length; i++) {
             markers[i].setMap(null);
         }
         markers = [];
         
-        // 인포윈도우 닫기
-        infowindow.close();
+        if (destMarker) {
+            destMarker.setMap(null);
+            destMarker = null;
+        }
 
-        // 사이드바 리스트 초기화
-        const listEl = document.getElementById('placesList');
-        listEl.innerHTML = '';
+        infowindow.close();
+        document.getElementById('placesList').innerHTML = '';
     }
 </script>
 
